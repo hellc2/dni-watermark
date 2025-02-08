@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <!-- No se permite hacer zoom -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>SINOLOGIC DNI WATERMARK</title>
+  <meta name="author" content="Elio Rojano <dniwatermark@sinologic.net>">
+  <!-- Bootstrap 5 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Bootstrap Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    /* Permite el scroll vertical si es necesario */
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #f8f9fa;
+      font-family: Arial, sans-serif;
+    }
+    /* Pantalla Splash centrada */
+    #splash {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: #fff;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      transition: opacity 0.5s ease;
+    }
+    #splash.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+    /* Contenedor principal */
+    #appContainer {
+      padding: 10px;
+      margin-top: 10px;
+    }
+    /* El canvas mantiene su resolución original y se escala en pantalla */
+    canvas {
+      border: 1px solid #ccc;
+      max-width: 100%;
+      height: auto;
+      touch-action: none; /* Evita comportamientos por defecto en dispositivos táctiles */
+    }
+    /* Botones de herramientas: cuando están activos se muestran en color primary */
+    .tool-btn.active {
+      background-color: #0d6efd;
+      color: #fff;
+    }
+    /* Panel de opciones avanzadas (inicialmente oculto) */
+    .advanced-options {
+      display: none;
+      margin-top: 10px;
+      font-size: 0.9rem;
+    }
+    .advanced-option {
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+    }
+    .advanced-option label {
+      margin-right: 8px;
+      min-width: 150px;
+    }
+    /* Si el espacio es reducido se reduce el tamaño de letra */
+    @media (max-width: 600px) {
+      .advanced-options {
+        font-size: 0.8rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Pantalla Splash -->
+  <div id="splash">
+    <img src="logo.png" alt="Logo" style="max-width: 200px;">
+    <h1>SINOLOGIC DNI WATERMARK</h1>
+  </div>
+
+  <!-- Contenedor principal -->
+  <div id="appContainer" class="container">
+    <!-- Canvas: sus dimensiones se ajustan a la imagen cargada -->
+    <div class="row mb-3">
+      <div class="col-12">
+        <canvas id="mainCanvas"></canvas>
+      </div>
+    </div>
+    <!-- Controles: carga de imagen y texto para la marca de agua -->
+    <div class="row mb-3">
+      <div class="col-6">
+        <input type="file" id="imageLoader" accept="image/*" class="form-control">
+      </div>
+      <div class="col-6">
+        <input type="text" id="watermarkText" placeholder="WATERMARK" class="form-control">
+      </div>
+    </div>
+    <!-- Botones de herramientas -->
+    <div class="row mb-3">
+      <div class="col-12 d-flex justify-content-around">
+        <button id="btnErase" class="btn btn-outline-primary tool-btn">
+          <i class="bi bi-eraser"></i> CENSURAR
+        </button>
+        <button id="btnPixelate" class="btn btn-outline-primary tool-btn">
+          <i class="bi bi-grid-3x3-gap"></i> PIXELAR
+        </button>
+        <button id="btnCrop" class="btn btn-outline-primary tool-btn">
+          <i class="bi bi-crop"></i> CROP
+        </button>
+      </div>
+    </div>
+    <!-- Botones de confirmación para la herramienta activa -->
+    <div class="row mb-3" id="editConfirmations" style="display: none;">
+      <div class="col-12 d-flex justify-content-center gap-2">
+        <button id="btnAccept" class="btn btn-success">ACEPTAR</button>
+        <button id="btnCancel" class="btn btn-danger">CANCELAR</button>
+      </div>
+    </div>
+    <!-- Botones de acción: Descargar y Actualizar -->
+    <div class="row mb-3">
+      <div class="col-12 d-flex justify-content-around">
+        <button id="btnDownload" class="btn btn-outline-secondary">
+          <i class="bi bi-download"></i> Descargar
+        </button>
+        <button id="btnUpdate" class="btn btn-outline-secondary">
+          <i class="bi bi-arrow-repeat"></i> Actualizar
+        </button>
+      </div>
+    </div>
+    <!-- Fila con botones "Opciones" y "Acerca de..." -->
+    <div class="row mb-3">
+      <div class="col-6 d-flex justify-content-around">
+        <button id="btnAdvancedOptions" class="btn btn-outline-info">Opciones</button>
+      </div>
+      <div class="col-6 d-flex justify-content-around">
+        <button id="btnAbout" class="btn btn-outline-info">Acerca de...</button>
+      </div>
+    </div>
+    <!-- Panel de Opciones Avanzadas -->
+    <div class="row advanced-options" id="advancedOptionsPanel">
+      <div class="col-12">
+        <div class="card card-body">
+          <!-- Fuente -->
+          <div class="advanced-option">
+            <label for="fontFamily">Fuente:</label>
+            <select id="fontFamily" class="form-select">
+              <option value="Arial">Arial</option>
+              <option value="Verdana">Verdana</option>
+              <option value="Times New Roman">Times New Roman</option>
+              <option value="Courier New">Courier New</option>
+              <option value="Georgia">Georgia</option>
+            </select>
+          </div>
+          <!-- Grosor de la letra -->
+          <div class="advanced-option">
+            <label for="fontWeight">Grosor de la letra:</label>
+            <select id="fontWeight" class="form-select">
+              <option value="300">Muy fino</option>
+              <option value="400">Fino</option>
+              <option value="500" selected>Normal</option>
+              <option value="700">Gordo</option>
+              <option value="900">Muy gordo</option>
+            </select>
+          </div>
+          <!-- Tamaño de la letra (opciones de 10 a 100) -->
+          <div class="advanced-option">
+            <label for="fontSize">Tamaño de la letra (px):</label>
+            <select id="fontSize" class="form-select">
+              <!-- Se completará mediante JavaScript -->
+            </select>
+          </div>
+          <!-- Número de repeticiones -->
+          <div class="advanced-option">
+            <label for="watermarkRepetitions">Número de repeticiones:</label>
+            <select id="watermarkRepetitions" class="form-select">
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3" selected>3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+            </select>
+          </div>
+          <!-- Opacidad -->
+          <div class="advanced-option">
+            <label for="watermarkOpacity">Opacidad (%):</label>
+            <select id="watermarkOpacity" class="form-select">
+              <option value="0">0%</option>
+              <option value="10">10%</option>
+              <option value="20">20%</option>
+              <option value="30" selected>30%</option>
+              <option value="40">40%</option>
+              <option value="50">50%</option>
+              <option value="60">60%</option>
+              <option value="70">70%</option>
+              <option value="80">80%</option>
+              <option value="90">90%</option>
+              <option value="100">100%</option>
+            </select>
+          </div>
+          <!-- Color del texto -->
+          <div class="advanced-option">
+            <label for="watermarkColor">Color del texto:</label>
+            <select id="watermarkColor" class="form-select">
+              <option value="black" selected>Negro</option>
+              <option value="red">Rojo</option>
+              <option value="blue">Azul</option>
+              <option value="green">Verde</option>
+              <option value="yellow">Amarillo</option>
+              <option value="white">Blanco</option>
+              <option value="gradient">Degradado</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Bootstrap 5 JS Bundle (incluye Popper) -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    /****************************************************
+     * VARIABLES GLOBALES Y CONFIGURACIÓN
+     ****************************************************/
+    // Valor de referencia para escalar proporcionalmente (BASELINE_WIDTH)
+    const BASELINE_WIDTH = 600;
+    
+    const canvas = document.getElementById('mainCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    // Estas variables se establecerán al cargar la imagen
+    let initialCanvasWidth, initialCanvasHeight;
+    
+    // Canvas offscreen para almacenar el estado "limpio" (imagen base + ediciones confirmadas) SIN marcas de agua
+    let offscreenCanvas = document.createElement('canvas');
+    let offscreenCtx = offscreenCanvas.getContext('2d');
+    
+    // Variable para la imagen original
+    let baseImage = new Image();
+    baseImage.src = 'dni-ejemplo.jpg';
+    baseImage.onload = function() {
+      // Ajusta el canvas a las dimensiones naturales de la imagen
+      canvas.width = baseImage.naturalWidth;
+      canvas.height = baseImage.naturalHeight;
+      initialCanvasWidth = canvas.width;
+      initialCanvasHeight = canvas.height;
+      offscreenCanvas.width = canvas.width;
+      offscreenCanvas.height = canvas.height;
+      drawBaseImage();
+      saveOffscreen();
+      applyWatermark();
+    };
+    
+    // Variables para herramientas y estados temporales
+    let currentTool = null; // 'erase' (CENSURAR), 'pixelate' o 'crop'
+    let drawing = false;
+    let lastPos = { x: 0, y: 0 };
+    // Para CENSURAR (línea recta)
+    let censorStart = null, censorEnd = null;
+    // Para CROP
+    let cropStart = null, cropEnd = null;
+    // Para PIXELAR: canvas temporal para acumular el efecto
+    let tempPixelateCanvas = null;
+    
+    /****************************************************
+     * PANTALLA SPLASH
+     ****************************************************/
+    window.addEventListener('load', () => {
+      setTimeout(() => {
+        const splash = document.getElementById('splash');
+        splash.classList.add('hidden');
+        setTimeout(() => { splash.style.display = 'none'; }, 500);
+      }, 2000);
+    });
+    
+    /****************************************************
+     * FUNCIONES DE UTILIDAD
+     ****************************************************/
+    function getCanvasCoordinates(evt) {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: (evt.clientX - rect.left) * (canvas.width / rect.width),
+        y: (evt.clientY - rect.top) * (canvas.height / rect.height)
+      };
+    }
+    
+    function drawBaseImage() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(baseImage, 0, 0, canvas.width, canvas.height);
+    }
+    
+    function saveOffscreen() {
+      offscreenCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
+      offscreenCtx.drawImage(canvas, 0, 0);
+    }
+    
+    // Calcula el color promedio de un bloque (usado en pixelado)
+    function averageColor(imageData, startX, startY, blockSize) {
+      let r = 0, g = 0, b = 0, a = 0, count = 0;
+      for (let i = 0; i < blockSize; i++) {
+        for (let j = 0; j < blockSize; j++) {
+          let x = startX + i, y = startY + j;
+          if (x < imageData.width && y < imageData.height) {
+            let index = (y * imageData.width + x) * 4;
+            r += imageData.data[index];
+            g += imageData.data[index + 1];
+            b += imageData.data[index + 2];
+            a += imageData.data[index + 3];
+            count++;
+          }
+        }
+      }
+      return { r: Math.round(r/count), g: Math.round(g/count), b: Math.round(b/count), a: Math.round(a/count) };
+    }
+    
+    // Factor de escala según el ancho actual respecto al BASELINE_WIDTH
+    function getScaleFactor() {
+      return canvas.width / BASELINE_WIDTH;
+    }
+    
+    // Retorna el tamaño de la brocha escalado
+    function getBrushSize() {
+      return 30 * getScaleFactor();
+    }
+    
+    /****************************************************
+     * MARCA DE AGUA
+     ****************************************************/
+    function applyWatermark() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(offscreenCanvas, 0, 0);
+      
+      let watermarkText = document.getElementById('watermarkText').value;
+      if (!watermarkText) watermarkText = 'WATERMARK';
+      
+      const fontFamily = document.getElementById('fontFamily').value;
+      const fontWeight = document.getElementById('fontWeight').value;
+      const fontSizeInput = parseInt(document.getElementById('fontSize').value, 10);
+      const scaleFactor = getScaleFactor();
+      const actualFontSize = fontSizeInput * scaleFactor;
+      
+      const repetitions = parseInt(document.getElementById('watermarkRepetitions').value, 10);
+      const opacityPercent = parseInt(document.getElementById('watermarkOpacity').value, 10);
+      const colorOption = document.getElementById('watermarkColor').value;
+      
+      ctx.save();
+      ctx.globalAlpha = opacityPercent / 100;
+      ctx.font = fontWeight + " " + actualFontSize + "px " + fontFamily;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      
+      if (colorOption === 'gradient') {
+        const gradient = ctx.createLinearGradient(0, 0, canvas.width, 0);
+        gradient.addColorStop(0, "red");
+        gradient.addColorStop(0.5, "blue");
+        gradient.addColorStop(1, "green");
+        ctx.fillStyle = gradient;
+      } else {
+        ctx.fillStyle = colorOption;
+      }
+      
+      for (let i = 0; i < repetitions; i++) {
+        const segmentHeight = canvas.height / repetitions;
+        const minY = i * segmentHeight;
+        const maxY = (i + 1) * segmentHeight;
+        const y = Math.random() * (maxY - minY) + minY;
+        const x = Math.random() * canvas.width;
+        ctx.fillText(watermarkText, x, y);
+      }
+      ctx.restore();
+    }
+    
+    /****************************************************
+     * CARGA DE IMAGEN PERSONALIZADA
+     ****************************************************/
+    document.getElementById('imageLoader').addEventListener('change', function(e) {
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        baseImage = new Image();
+        baseImage.onload = function() {
+          // Ajusta el canvas a las dimensiones naturales de la imagen
+          canvas.width = baseImage.naturalWidth;
+          canvas.height = baseImage.naturalHeight;
+          initialCanvasWidth = canvas.width;
+          initialCanvasHeight = canvas.height;
+          offscreenCanvas.width = canvas.width;
+          offscreenCanvas.height = canvas.height;
+          drawBaseImage();
+          saveOffscreen();
+          applyWatermark();
+        };
+        baseImage.src = event.target.result;
+      };
+      reader.readAsDataURL(e.target.files[0]);
+    });
+    
+    /****************************************************
+     * MANEJO DE HERRAMIENTAS DE EDICIÓN
+     ****************************************************/
+    function disableToolButtons(activeButton) {
+      [btnErase, btnPixelate, btnCrop].forEach(btn => {
+        if (btn !== activeButton) { btn.disabled = true; }
+      });
+      btnDownload.disabled = true;
+      btnUpdate.disabled = true;
+    }
+    
+    function enableToolButtons() {
+      [btnErase, btnPixelate, btnCrop].forEach(btn => { btn.disabled = false; });
+      btnDownload.disabled = false;
+      btnUpdate.disabled = false;
+    }
+    
+    function resetToolButtons() {
+      btnErase.classList.remove('active');
+      btnPixelate.classList.remove('active');
+      btnCrop.classList.remove('active');
+      currentTool = null;
+      document.getElementById('editConfirmations').style.display = 'none';
+      enableToolButtons();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(offscreenCanvas, 0, 0);
+    }
+    
+    const btnErase = document.getElementById('btnErase');
+    const btnPixelate = document.getElementById('btnPixelate');
+    const btnCrop = document.getElementById('btnCrop');
+    const btnAccept = document.getElementById('btnAccept');
+    const btnCancel = document.getElementById('btnCancel');
+    const btnDownload = document.getElementById('btnDownload');
+    const btnUpdate = document.getElementById('btnUpdate');
+    
+    // CENSURAR: dibuja una línea recta
+    btnErase.addEventListener('click', () => {
+      resetToolButtons();
+      currentTool = 'erase';
+      btnErase.classList.add('active');
+      disableToolButtons(btnErase);
+      document.getElementById('editConfirmations').style.display = 'flex';
+    });
+    
+    // PIXELAR: actúa como un lápiz que pixeliza la zona tocada
+    btnPixelate.addEventListener('click', () => {
+      resetToolButtons();
+      currentTool = 'pixelate';
+      btnPixelate.classList.add('active');
+      disableToolButtons(btnPixelate);
+      document.getElementById('editConfirmations').style.display = 'flex';
+    });
+    
+    // CROP
+    btnCrop.addEventListener('click', () => {
+      resetToolButtons();
+      currentTool = 'crop';
+      btnCrop.classList.add('active');
+      disableToolButtons(btnCrop);
+      document.getElementById('editConfirmations').style.display = 'flex';
+    });
+    
+    btnCancel.addEventListener('click', () => {
+      resetToolButtons();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(offscreenCanvas, 0, 0);
+    });
+    
+    btnAccept.addEventListener('click', () => {
+      if (currentTool === 'erase' || currentTool === 'pixelate') {
+        saveOffscreen();
+      } else if (currentTool === 'crop') {
+        if (cropStart && cropEnd) {
+          const x = Math.min(cropStart.x, cropEnd.x);
+          const y = Math.min(cropStart.y, cropEnd.y);
+          const width = Math.abs(cropEnd.x - cropStart.x);
+          const height = Math.abs(cropEnd.y - cropStart.y);
+          if (width > 0 && height > 0) {
+            const croppedCanvas = document.createElement('canvas');
+            croppedCanvas.width = width;
+            croppedCanvas.height = height;
+            const croppedCtx = croppedCanvas.getContext('2d');
+            croppedCtx.drawImage(offscreenCanvas, x, y, width, height, 0, 0, width, height);
+            canvas.width = width;
+            canvas.height = height;
+            offscreenCanvas.width = width;
+            offscreenCanvas.height = height;
+            ctx.clearRect(0, 0, width, height);
+            ctx.drawImage(croppedCanvas, 0, 0);
+            offscreenCtx = offscreenCanvas.getContext('2d');
+            saveOffscreen();
+          }
+        }
+        cropStart = null;
+        cropEnd = null;
+      }
+      resetToolButtons();
+    });
+    
+    /****************************************************
+     * EVENTOS POINTER EN EL CANVAS
+     ****************************************************/
+    canvas.addEventListener('pointerdown', (evt) => {
+      const pos = getCanvasCoordinates(evt);
+      if (currentTool === 'erase') {
+        censorStart = pos;
+        drawing = true;
+      } else if (currentTool === 'pixelate') {
+        drawing = true;
+        tempPixelateCanvas = document.createElement('canvas');
+        tempPixelateCanvas.width = canvas.width;
+        tempPixelateCanvas.height = canvas.height;
+        let tempCtx = tempPixelateCanvas.getContext('2d');
+        tempCtx.drawImage(offscreenCanvas, 0, 0);
+      } else if (currentTool === 'crop') {
+        cropStart = pos;
+        cropEnd = pos;
+      }
+    });
+    
+    canvas.addEventListener('pointermove', (evt) => {
+      const pos = getCanvasCoordinates(evt);
+      if (currentTool === 'erase' && drawing) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(offscreenCanvas, 0, 0);
+        ctx.beginPath();
+        ctx.moveTo(censorStart.x, censorStart.y);
+        ctx.lineTo(pos.x, pos.y);
+        ctx.lineWidth = getBrushSize();
+        ctx.strokeStyle = 'black';
+        ctx.stroke();
+      } else if (currentTool === 'pixelate' && drawing) {
+        let brushSize = getBrushSize();
+        let x = pos.x - brushSize / 2;
+        let y = pos.y - brushSize / 2;
+        let blockSize = 2;
+        let tempCtx = tempPixelateCanvas.getContext('2d');
+        let regionData = tempCtx.getImageData(x, y, brushSize, brushSize);
+        let regionCanvas = document.createElement('canvas');
+        regionCanvas.width = brushSize;
+        regionCanvas.height = brushSize;
+        let regionCtx = regionCanvas.getContext('2d');
+        for (let i = 0; i < brushSize; i += blockSize) {
+          for (let j = 0; j < brushSize; j += blockSize) {
+            let avg = averageColor(regionData, i, j, blockSize);
+            regionCtx.fillStyle = `rgba(${avg.r}, ${avg.g}, ${avg.b}, ${avg.a/255})`;
+            let offsetX = Math.floor(Math.random() * 3) - 1;
+            let offsetY = Math.floor(Math.random() * 3) - 1;
+            regionCtx.fillRect(i + offsetX, j + offsetY, blockSize, blockSize);
+          }
+        }
+        let processedRegion = regionCtx.getImageData(0, 0, brushSize, brushSize);
+        tempCtx.putImageData(processedRegion, x, y);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(tempPixelateCanvas, 0, 0);
+      } else if (currentTool === 'crop' && cropStart) {
+        cropEnd = pos;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(offscreenCanvas, 0, 0);
+        ctx.strokeStyle = 'red';
+        const scaleFactor = getScaleFactor();
+        ctx.lineWidth = 2 * scaleFactor;
+        ctx.setLineDash([5, 3]);
+        const rectX = cropStart.x;
+        const rectY = cropStart.y;
+        const rectWidth = pos.x - cropStart.x;
+        const rectHeight = pos.y - cropStart.y;
+        ctx.strokeRect(rectX, rectY, rectWidth, rectHeight);
+      }
+    });
+    
+    canvas.addEventListener('pointerup', (evt) => {
+      const pos = getCanvasCoordinates(evt);
+      if (currentTool === 'erase' && drawing) {
+        drawing = false;
+        censorEnd = pos;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(offscreenCanvas, 0, 0);
+        ctx.beginPath();
+        ctx.moveTo(censorStart.x, censorStart.y);
+        ctx.lineTo(censorEnd.x, censorEnd.y);
+        ctx.lineWidth = getBrushSize();
+        ctx.strokeStyle = 'black';
+        ctx.stroke();
+      } else if (currentTool === 'pixelate' && drawing) {
+        drawing = false;
+      }
+    });
+    
+    canvas.addEventListener('pointerleave', (evt) => {
+      if ((currentTool === 'erase' || currentTool === 'pixelate') && drawing) {
+        drawing = false;
+      }
+    });
+    
+    /****************************************************
+     * DESCARGAR: Se descarga exactamente lo que aparece en el canvas,
+     * en resolución y orientación original.
+     ****************************************************/
+    btnDownload.addEventListener('click', () => {
+      let finalCanvas = document.createElement('canvas');
+      finalCanvas.width = canvas.width;
+      finalCanvas.height = canvas.height;
+      finalCanvas.getContext('2d').drawImage(canvas, 0, 0);
+      const dataUrl = finalCanvas.toDataURL();
+      const newWindow = window.open();
+      if (newWindow) {
+        newWindow.document.write('<img src="' + dataUrl + '" alt="Imagen descargada">');
+      } else {
+        alert("Por favor, permita ventanas emergentes para descargar la imagen.");
+      }
+    });
+    
+    btnUpdate.addEventListener('click', () => {
+      applyWatermark();
+    });
+    
+    /****************************************************
+     * BOTONES "OPCIONES" Y "ACERCA DE..."
+     ****************************************************/
+    const btnAdvancedOptions = document.getElementById('btnAdvancedOptions');
+    const advancedOptionsPanel = document.getElementById('advancedOptionsPanel');
+    btnAdvancedOptions.addEventListener('click', () => {
+      if (advancedOptionsPanel.style.display === 'none' || advancedOptionsPanel.style.display === '') {
+        advancedOptionsPanel.style.display = 'block';
+      } else {
+        advancedOptionsPanel.style.display = 'none';
+      }
+    });
+    
+    const btnAbout = document.getElementById('btnAbout');
+    btnAbout.addEventListener('click', () => {
+      window.location.href = "acerca_de.html";
+    });
+    
+    /****************************************************
+     * GENERAR OPCIONES PARA TAMAÑO DE LA LETRA (10 a 100)
+     ****************************************************/
+    function populateFontSizeOptions() {
+      const fontSizeSelect = document.getElementById('fontSize');
+      fontSizeSelect.innerHTML = "";
+      for (let i = 10; i <= 100; i++) {
+        const option = document.createElement('option');
+        option.value = i;
+        option.text = i;
+        if (i === 30) { option.selected = true; }
+        fontSizeSelect.appendChild(option);
+      }
+    }
+    populateFontSizeOptions();
+    
+    /****************************************************
+     * ACTUALIZACIÓN AUTOMÁTICA DE LA MARCA DE AGUA
+     * Cuando se modifica el texto de la marca de agua, se actualiza la imagen.
+     ****************************************************/
+    document.getElementById('watermarkText').addEventListener('input', function() {
+      applyWatermark();
+    });
+    
+  </script>
+</body>
+</html>
